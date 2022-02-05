@@ -5,6 +5,9 @@ import Plot from 'react-plotly.js'
 import './index.css'
 import migrantData from '../data/data.json'
 
+import imgUrl from '../favicon.png'
+document.getElementById('favicon').href = imgUrl
+
 function App() {
   const chartSize = 550;
   const margin = 30;
@@ -318,11 +321,11 @@ function App() {
                   fontSize: '18px',
                   fontWeight: 'heavy'
                 }}
-                x='175' 
+                x='150' 
                 y='35'
                aria-label="Chart of All Missing Migrant Deaths in 2019 and 2021"
               >
-                All Missing Migrant Deaths in 2019 and 2021
+                North American Missing Migrant Deaths in 2019 and 2021
         </text>
 
 
@@ -381,7 +384,7 @@ function App() {
           y='35'
           aria-label="Chart of Missing Migrant Deaths in 2019 and 2021 of Higher Source Quality"
         >
-              Missing Migrant Deaths in 2019 and 2021 from Higher Quality Sources
+              North American Deaths in 2019 and 2021 from Higher Quality Sources
         </text>
         <AxisLeft strokeWidth={0} left={margin} scale={_scaleY}/>
         <AxisBottom 
@@ -433,7 +436,7 @@ function App() {
       <p>
       In 2021 there was still an ongoing Pandemic, although the United States began rolling out vaccines the rest of the world was still not fully vaccinated. The drop in deaths in October could be attributed to the higher rate of fully vaccinated people globally. By the end of September 2021, about 35% of the world's population is fully vaccinated according to <cite><a href="https://ourworldindata.org/covid-vaccinations">Our World in Data</a></cite>.
       </p>
-      <div id="addSpace">
+      <div id="addSpace" className="plot">
       <Plot
         data={regionData}
         layout={ {width: chartSize + legendPadding, height: chartSize + margin, title: 'Total Dead for Each Region'}}
@@ -442,7 +445,7 @@ function App() {
       <p>
         North America has much higher deaths than any other region, it also has the most people migrating to this region than anywhere else in the world in 2016 it was found that there were 1 Million people who migrated to the US each year. Thus I will continue to focus solely on North America in my further investigations.
       </p>
-      <div>
+      <div className="plot">
       <Plot
         data={NAData}
         layout={ {width: chartSize + legendPadding, height: chartSize + margin, title: 'Total Dead for Each Year'}}
@@ -455,7 +458,7 @@ function App() {
       <p>Going back to the <a href="#two">first chart</a> I made let's explore the error margin for each month. 
       I did this through taking into account the source quality. Scaling the data by the source quality, i.e. if it is a 5 quality level the death will be counted wholly with no margin or error,
        but if there is a level 1 quality deaths source the error margin will increase. This will allow us to understand just how reliable this data is for both 2019 and 2021 in North America.</p>
-    <div>
+    <div className="plot">
       <Plot
         data={err2019}
         layout={ {
@@ -464,7 +467,7 @@ function App() {
           title: 'Deaths with Error Margin in NA in 2019 per Month'}}
       />
     </div>
-    <div>
+    <div className="plot">
       <Plot
         data={err2021}
         layout={ {
@@ -474,9 +477,13 @@ function App() {
       />
     </div>
     <h2>Conclusion</h2>
+    <p>
+      After calculating the error margins in both 2019 and 2021 there are several months that have very high error margins. In 2019 both June and July had bigger margins of error, after a quick google search I found out President reached a deal with Mexico to avoid tariffs and curb immigration and human trafficking. This caused immigrants to illegally cross borders out of desperation and fight to survive in their journeys, leading to lower quality of sources reporting these deaths. Lastly in June of 2021, travel restrictions were eased in countries not yet equiped or safe enough to do so, leading to surges in cases globally. The different causes and trends in these graphs can be explained by major events. 
+    </p>
     </div>
   <footer>
         <p>Raiham Malik Winter 22 Info 474</p>
+       <p><a href="https://github.com/Raihamm/474finalproj">Github Repo</a></p> 
   </footer>
   </div>
     
