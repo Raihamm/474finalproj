@@ -1,23 +1,47 @@
-import { scaleLinear, scaleBand, extent, line, symbol, csv, sum } from "d3";
+import { scaleLinear, scaleBand, extent, line, symbol, csv, sum, quantize, color } from "d3";
 import { AxisLeft, AxisBottom } from "@visx/axis";
-import _ from "lodash";
+import _, { fill, indexOf, reduce } from "lodash";
 import Plot from 'react-plotly.js'
 import './index.css'
 import migrantData from '../data/data.json'
-
+import React, {useState} from "react";
 import imgUrl from '../favicon.png'
 document.getElementById('favicon').href = imgUrl
+import Graphs from './graph'
+// add more divisions bt graphs and text, move text and graph side by side, add differing visuals
+// add map
 
 function App() {
-  const chartSize = 550;
+  const chartSize = 500;
   const margin = 30;
   const legendPadding = 180;
   const usableData = [];
-  const globalData = []
-  const csvData = []
-  const districts = [];
-  let dataByDay;
-
+  let quality = [1,2,3,4,5]
+  let [show, setShow] = useState([true,true,true,true,true]);
+  let [guess,setGuess] = useState("")
+  let [view,setView] = useState(false)
+  let [correct,setCorrect] = useState(false)
+  let [clicked, setClicked] = useState(false)
+  const handleOnChange = (position) => {
+    const updatedCheckedState = show.map((item, index) =>
+      index === position ? !item : item
+    );
+    setShow(updatedCheckedState)
+  }
+  
+  let idsForMonth = {"January":[],
+  "February":[],
+    "March":[],
+    "April":[],
+    "May":[],
+    "June":[],
+    "July":[],
+    "August":[],
+    "September":[],
+    "October":[],
+    "November":[],
+    "December":[],
+}
   const months = [
     "January",
     "February",
@@ -32,38 +56,74 @@ function App() {
     "November",
     "December",
   ];
+  let tester2019 = []
+  var groupBy = function(xs, key) {
+    return xs.reduce(function(rv, x) {
+      (rv[x[key]] = rv[x[key]] || []).push(x);
+      return rv;
+    }, {});
+  };
+  var sum = function(key) {
+    return reduce((a,b) => a + (b[key] || 0), 0);
+  }
+  function linearRegression(y,x){
+    var lr = {};
+    var n = y.length;
+    var sum_x = 0;
+    var sum_y = 0;
+    var sum_xy = 0;
+    var sum_xx = 0;
+    var sum_yy = 0;
+
+    for (var i = 0; i < y.length; i++) {
+
+        sum_x += x[i];
+        sum_y += y[i];
+        sum_xy += (x[i]*y[i]);
+        sum_xx += (x[i]*x[i]);
+        sum_yy += (y[i]*y[i]);
+    } 
+
+    lr['slope'] = (n * sum_xy - sum_x * sum_y) / (n*sum_xx - sum_x * sum_x);
+    lr['intercept'] = (sum_y - lr.slope * sum_x)/n;
+    lr['r2'] = Math.pow((n*sum_xy - sum_x*sum_y)/Math.sqrt((n*sum_xx-sum_x*sum_x)*(n*sum_yy-sum_y*sum_y)),2);
+
+    return lr;
+}
   let monthlyDeaths2021 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
   let monthlyDeaths2019 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let credible2019 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let credible2021 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+  
   migrantData.forEach((object)=>{
+    object.show = show;
     if(object.Region =="North America" && !isNaN(object["Number Dead"]) && object["Number Dead"] !== ""){
-    usableData.push(object)
-    
+      usableData.push(object)
     }}
   )
-  
-  usableData.forEach((object)=>{
+   
+let causesOfDeath = groupBy(usableData, 'Cause of Death');
+causesOfDeath = Object.keys(causesOfDeath)
+let [checked, setChecked] = useState(new Array(causesOfDeath.length).fill(true));
+const handleClick = (position) => {
+  const updatedState = checked.map((item, index) =>
+    index === position ? !item : item
+  );
+  setChecked(updatedState)
+}
+
+usableData.forEach((object)=>{
     let matchingIndex = months.indexOf((object["Reported Month"]));
    if(matchingIndex !== -1){
-     if(object.Year === 2019){
+     if(object.Year === 2019 && show[quality.indexOf(object['Source Quality'])] == true && checked[causesOfDeath.indexOf(object['Cause of Death'])] == true){
       let curr = monthlyDeaths2019[matchingIndex]
-        monthlyDeaths2019[matchingIndex] = curr + parseFloat(object["Number Dead"])
-        if(object["Source Quality"] > 4){
-          credible2019[matchingIndex] = credible2019[matchingIndex] + parseFloat(object["Number Dead"])
-        }
+      monthlyDeaths2019[matchingIndex] = curr + parseFloat(object["Number Dead"])
      }
-     if(object.Year === 2021){
+     if(object.Year === 2021 && show[quality.indexOf(object['Source Quality'])] == true && checked[causesOfDeath.indexOf(object['Cause of Death'])] == true){
       let curr = monthlyDeaths2021[matchingIndex]
         monthlyDeaths2021[matchingIndex] = curr + parseFloat(object["Number Dead"])
-        if(object["Source Quality"] > 4){
-          credible2021[matchingIndex] = curr + parseFloat(object["Number Dead"])
-        }
     }
    }
    
   })
-  
   let line1 = {
     x:months,
     y:monthlyDeaths2019,
@@ -77,29 +137,22 @@ function App() {
     type: 'scatter',
     name: '2021'
   }
-  let line1cred = {
-    x:months,
-    y:credible2019,
-    type: 'scatter',
-    name: '2019'
-  }
-  let line2cred = {
-    x:months,
-    y:credible2021,
-    type: 'scatter',
-    name: '2021'
-  }
+ 
   let graphData = [line1,line2]
-  let higherQual = [line1cred, line2cred]
   let dataRange = [0]
-  dataRange.push(Math.max(...monthlyDeaths2019))
+  if(Math.max(...monthlyDeaths2019) > Math.max(...monthlyDeaths2021)){
+    dataRange.push(Math.max(...monthlyDeaths2019))
+  } else {
+    dataRange.push(Math.max(...monthlyDeaths2021))
+  }
+  
   const _extent = extent(dataRange);
   const _scaleY = scaleLinear()
     .domain(_extent)
     .range([chartSize - margin, 2*margin + 10]);
   const _scaleLine = scaleLinear()
     .domain([0, 11])
-    .range([margin, chartSize+50]);
+    .range([2*margin, chartSize+50]);
   const _scaleDate = scaleBand()
     .domain(months)
     .range([0, chartSize+50]);
@@ -112,100 +165,7 @@ function App() {
       return _scaleY(d);
     });
     const years = ['2019', '2021']
-  let globalDeaths2021 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let globalDeaths2019 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let globMissing2019 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let globMissing2021 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  
-  migrantData.forEach((object)=>{
-    if(!isNaN(object["Number Dead"]) && object["Number Dead"] !== "" && object["Source Quality"] > 4 && !isNaN(object["Source Quality"]) && object['Source Quality'] > 0){
-      globalData.push(object)
-    }}
-  )
-  globalData.forEach((object)=>{
-    let matchingIndex = months.indexOf((object["Reported Month"]));
-   if(matchingIndex !== -1){
-     if(object.Year === 2019){
-      globalDeaths2019[matchingIndex] = globalDeaths2019[matchingIndex] + parseFloat(object["Number Dead"])
-      if(!isNaN(object["Minimum Estimated Number of Missing"]) && object["Minimum Estimated Number of Missing"] !== ""){
-        globMissing2019[matchingIndex] = globMissing2019[matchingIndex] + parseFloat(object["Minimum Estimated Number of Missing"])
-      }
-    }
-     if(object.Year === 2021){
-      globalDeaths2021[matchingIndex] = globalDeaths2021[matchingIndex] + parseFloat(object["Number Dead"])
-      if(!isNaN(object["Minimum Estimated Number of Missing"]) && object["Minimum Estimated Number of Missing"] !== ""){
-        globMissing2021[matchingIndex] = globMissing2021[matchingIndex] + parseFloat(object["Number Dead"])
-      }
-    }
-   }
    
-  })
-  let globalline1 = {
-    x:months,
-    y:globalDeaths2019,
-    type: 'scatter',
-    name: '2019',
-    line: {
-      color: 'red'
-    } 
-
-  }
-  let globalline2 = {
-    x:months,
-    y:globalDeaths2021,
-    type: 'scatter',
-    name: '2021',
-    line: {
-      color: 'green'
-    }
-  }
-  let globalline1cred = {
-    x:months,
-    y:globMissing2019,
-    type: 'scatter',
-    name: '2019',
-    line: {
-      color: 'red'
-    }
-  }
-  let globalline2cred = {
-    x:months,
-    y:globMissing2021,
-    type: 'scatter',
-    name: '2021',
-    line: {
-      color: 'green'
-    }
-  }
-  let globalDeath = [globalline1,globalline2]
-  let globalMissing = [globalline1cred, globalline2cred] 
-  var groupBy = function(xs, key) {
-    return xs.reduce(function(rv, x) {
-      (rv[x[key]] = rv[x[key]] || []).push(x);
-      return rv;
-    }, {});
-  };
-
-  let regions = groupBy(globalData, 'Region')
-  let regionList = Object.keys(regions)
-  let holder = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  
-  for (const [key, value] of Object.entries(regions)) {
-    let index = 0;
-    value.forEach(object=>{
-      index = regionList.indexOf(key)
-      holder[index] = holder[index] + parseFloat(object['Number Dead'])
-    })
-  }
-  let regionData = [{
-    x: regionList,
-    y: holder,
-    type: 'bar',
-    marker: {
-      color: 'red'
-    }
-  }]
-  
   // Handles North America Deaths per year
   let allNA = groupBy(usableData, 'Year')
   let yearList = Object.keys(allNA)
@@ -225,84 +185,246 @@ function App() {
       color: 'red'
     }
   }]
-  
-  //Error Charts
-  // I can reuse the monthlyDeatharrys but need to create another array solely for errors
-  let error2019 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let error2021 = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-  let errorScale = {5: 1, 4: 0.8, 3: 0.6, 2: 0.4, 1:0.2}
-  usableData.forEach((object)=>{
-    let matchingIndex = months.indexOf((object["Reported Month"]));
-   if(matchingIndex !== -1 && !isNaN(object['Source Quality']) && object['Source Quality'] >0){
-     if(object.Year === 2019){
-      error2019[matchingIndex] = error2019[matchingIndex] + parseFloat(errorScale[object['Source Quality']])
-     }
-     if(object.Year === 2021){
-      error2021[matchingIndex] = error2021[matchingIndex] + parseFloat(errorScale[object['Source Quality']])
-      
-    }
-   }
+
+  let lin2022 = []
+  let allMo = groupBy(usableData, 'Reported Month')
+  let indexerCount = []
+  let sumMonthly = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+  for (const [key, value] of Object.entries(allMo)) {
+    let index = 0;
+    let indexer = [0]
+    let cont = []
+    value.forEach(object=>{
+      cont.push(parseFloat(object['Number Dead']))
+      indexer.push(index +1)
+      index = index+1
+    })
+    lin2022.push(linearRegression(cont, indexer))
+    indexerCount.push(indexer.length)
+  }
+  let predicted2022 = []
+  lin2022.forEach(object=>{
+    predicted2022.push(object['slope'] * (indexerCount[(lin2022.indexOf(object))]) + object['intercept'])
+        
   })
-  let err2019 = [{
-    x:months,
-    y:monthlyDeaths2019,
+  lin2022 = linearRegression(sumYearly,[1,2,3,4,5,6,7,8])
+  predicted2022 = lin2022['slope'] * 9 + lin2022['intercept']
+  let newYearsSum = [...sumYearly]
+  let newYears = [...yearList]
+  newYears.push('2022')
+  
+  newYearsSum.push(predicted2022)
+  let predicted = {
+    x:newYears,
+    y:newYearsSum,
     type: 'scatter',
-    name: '2019', 
-    error_y: {
-      type: 'data',
-      array: error2019,
-      visible: true
-    },
-    line: {
-      color: 'red'
+    name: '2022', 
+  }
+  
+  let pee = [0, Math.max(...newYearsSum)]
+  const _extent1 = extent(pee);
+  const _scaleY1 = scaleLinear()
+    .domain(_extent1)
+    .range([chartSize - margin, 2*margin + 10]);
+  const _scaleLine1 = scaleLinear()
+    .domain([0, 8])
+    .range([2*margin, chartSize+90]);
+  const _scaleDate1 = scaleBand()
+    .domain(newYears)
+    .range([0, chartSize+50]);
+
+  const _lineMaker1 = line()
+    .x((d, i) => {
+      return _scaleLine1(i);
+    })
+    .y((d) => {
+      return _scaleY1(d);
+    });
+    
+    
+    let poo = [0, Math.max(...sumYearly)]
+  const _extent2 = extent(poo);
+  const _scaleY2 = scaleLinear()
+    .domain(_extent2)
+    .range([chartSize - margin, 2*margin + 10]);
+  const _scaleLine2 = scaleLinear()
+    .domain([0, 7])
+    .range([2*margin, chartSize+90]);
+  const _scaleDate2 = scaleBand()
+    .domain(yearList)
+    .range([0, chartSize+50]);
+
+  const _lineMaker2 = line()
+    .x((d, i) => {
+      return _scaleLine2(i);
+    })
+    .y((d) => {
+      return _scaleY2(d);
+    }); 
+  let cause2022 = groupBy(usableData, 'Cause of Death')
+  let causeSum =new Array(causesOfDeath.length).fill(0.0)
+  let lengths = new Array(causesOfDeath.length).fill(0.0)
+  let causeMeans =  []
+  let totalSum = 0
+  for (const [key, value] of Object.entries(cause2022)) {
+    let i = causesOfDeath.indexOf(key)
+    value.forEach(object=>{
+      // if(parseFloat(object['Number Dead']) >0.0){
+        lengths[i] = value.length
+        causeSum[i] = causeSum[i] + (parseFloat(object['Number Dead']))
+        totalSum = totalSum + parseFloat(object['Number Dead'])
+      // }
+    })  
+  }
+  causeSum.forEach(value=>{
+    causeMeans.push(predicted2022*value/totalSum)
+  })
+  const handleSubmit = (value)=>{
+    
+    console.log(value)
+    if(parseFloat(value) < (predicted2022 +100) && parseFloat(value) > (predicted2022 -100)){
+      setCorrect(true)
+    } else {
+      setCorrect(false)
     }
-
-  }]
-
-  let err2021 = [{
-    x:months,
-    y:monthlyDeaths2021,
-    type: 'scatter',
-    name: '2021', 
-    error_y: {
-      type: 'data',
-      array: error2021,
-      visible: true
-    },
-    line: {
-      color: 'green'
-    }
-
-  }]
+  }
 
   return (
     <div id="maincont">
       <header className="bg-info">
+        <div className="header-img">
        <h1> Missing Migrants Visualization Project</h1>
        <h2>Raiham Malik</h2>
-       <div className="topnav"> 
-        {/* <ul className="menu">  */}
-            <a id="sec-1" href="#one">About</a>
-            {/* <a id="sec-2" href="#chart-img">Python Chart and Findings</a>
-            <a id="sec-3" href="#code-img">Python Code</a>
-            <a id="sec-4" href="#four">Javascript Chart attempt</a> */}
-          {/* </ul> */}
-      </div>
+       </div>
       </header>
       
       <p className="m-3" id="one">
-        The Missing Migrants Project tracks deaths of migrants, including refugees and asylum-seekers and this data has been collected from 2014 and is constantly updated.
-        By collecting this data regularly the MM Project hopes to shed light on the global epidemic of crime and abuse inflicted upon migrants  
+        The <a href="https://missingmigrants.iom.int/">Missing Migrants Project</a> tracks deaths of migrants, including refugees and asylum-seekers and this data has been collected from 2014 and is constantly updated.
+        By collecting this data regularly the MM Project hopes to shed light on the global epidemic of crime and abuse inflicted upon migrants. Through D3, Javascript, and the Pandas Library I will illuminate the unfortunate trends and insight that can be shown through the data. 
       </p>
-      <h3>I would first like to answer the question: What has been the trend of migrants death in North America over the course of 2021 versus 2019 before the COVID-19 Pandemic?</h3>
+      <p>Below there are diffferent Source Quality levels this corresponds to the source quality of the reported incident and the causes of death are thus dependent on this source as well.</p>
+      <h3>Play around with the different quality of the sources and causes of death, what do you find?</h3>
+      <div id="checkboxes">
+      <h4>Source Quality Level</h4> 
+        {quality.map((value, index) => {
+         
+          return (
+                <div className="left-section">
+                  <input
+                    type="checkbox"
+                    id={`custom-checkbox-${index}`}
+                    value={value}
+                    checked={show[index]}
+                    onChange={() => handleOnChange(index)}
+                  />
+                  <label htmlFor={`custom-checkbox-${index}`}>{value}</label>
+                </div>
+          );
+        })}
+         <h4>Causes of Death</h4> 
+        {causesOfDeath.map((value, index) => {
+         
+          return (
+                <div className="right-section">
+                  <input
+                    type="checkbox"
+                    id={`checkbox-${index}`}
+                    value={value}
+                    checked={checked[index]}
+                    onChange={() => handleClick(index)}
+                  />
+                  <label htmlFor={`checkbox-${index}`}>{value}</label>
+                </div>
+          );
+        })}  
+        </div>    
       <div style={{ margin: 20 }} id="two">
-      {/* <Carousel> */}
-  {/* <Carousel.Item> */}
-
+      
+          
       <svg
         width={chartSize + legendPadding}
         height={chartSize + margin}
         key = {'a'}
+        className="fixed"
+      >
+          <rect 
+          width={'100%'}
+          height={'100%'}
+          fill={'white'}
+          /> 
+        <path d="M649.824 210.035V211H643.774V210.156L646.802 206.785C647.175 206.37 647.462 206.019 647.666 205.731C647.873 205.439 648.017 205.179 648.097 204.951C648.182 204.718 648.224 204.481 648.224 204.24C648.224 203.935 648.161 203.66 648.034 203.415C647.911 203.165 647.729 202.966 647.488 202.818C647.247 202.67 646.955 202.596 646.612 202.596C646.201 202.596 645.859 202.676 645.583 202.837C645.313 202.993 645.11 203.214 644.974 203.497C644.839 203.781 644.771 204.106 644.771 204.475H643.597C643.597 203.954 643.711 203.478 643.939 203.046C644.168 202.615 644.507 202.272 644.955 202.018C645.404 201.76 645.956 201.631 646.612 201.631C647.196 201.631 647.695 201.735 648.11 201.942C648.525 202.145 648.842 202.433 649.062 202.805C649.286 203.173 649.398 203.605 649.398 204.1C649.398 204.371 649.352 204.646 649.259 204.925C649.17 205.2 649.045 205.475 648.884 205.75C648.728 206.026 648.544 206.296 648.332 206.563C648.125 206.83 647.903 207.092 647.666 207.35L645.19 210.035H649.824ZM656.882 205.643V207.052C656.882 207.809 656.815 208.448 656.679 208.969C656.544 209.489 656.349 209.908 656.095 210.226C655.841 210.543 655.535 210.774 655.175 210.917C654.819 211.057 654.417 211.127 653.969 211.127C653.613 211.127 653.285 211.083 652.985 210.994C652.684 210.905 652.414 210.763 652.172 210.568C651.935 210.369 651.732 210.111 651.563 209.794C651.394 209.477 651.265 209.091 651.176 208.639C651.087 208.186 651.042 207.657 651.042 207.052V205.643C651.042 204.885 651.11 204.25 651.246 203.738C651.385 203.226 651.582 202.816 651.836 202.507C652.09 202.194 652.395 201.969 652.75 201.834C653.11 201.699 653.512 201.631 653.956 201.631C654.316 201.631 654.646 201.675 654.946 201.764C655.251 201.849 655.522 201.986 655.759 202.177C655.996 202.363 656.197 202.613 656.362 202.926C656.531 203.235 656.66 203.613 656.749 204.062C656.838 204.511 656.882 205.037 656.882 205.643ZM655.702 207.242V205.446C655.702 205.031 655.676 204.667 655.625 204.354C655.579 204.037 655.509 203.766 655.416 203.542C655.323 203.317 655.204 203.135 655.061 202.996C654.921 202.856 654.758 202.754 654.572 202.691C654.39 202.623 654.185 202.589 653.956 202.589C653.677 202.589 653.429 202.642 653.213 202.748C652.998 202.85 652.816 203.013 652.667 203.237C652.524 203.461 652.414 203.755 652.337 204.119C652.261 204.483 652.223 204.925 652.223 205.446V207.242C652.223 207.657 652.246 208.023 652.293 208.34C652.344 208.658 652.418 208.933 652.515 209.166C652.612 209.394 652.731 209.582 652.871 209.73C653.01 209.879 653.171 209.989 653.353 210.061C653.539 210.128 653.744 210.162 653.969 210.162C654.257 210.162 654.508 210.107 654.724 209.997C654.94 209.887 655.12 209.716 655.264 209.483C655.412 209.246 655.522 208.943 655.594 208.575C655.666 208.203 655.702 207.758 655.702 207.242ZM664.449 210.035V211H658.399V210.156L661.427 206.785C661.8 206.37 662.087 206.019 662.291 205.731C662.498 205.439 662.642 205.179 662.722 204.951C662.807 204.718 662.849 204.481 662.849 204.24C662.849 203.935 662.786 203.66 662.659 203.415C662.536 203.165 662.354 202.966 662.113 202.818C661.872 202.67 661.58 202.596 661.237 202.596C660.826 202.596 660.484 202.676 660.208 202.837C659.938 202.993 659.735 203.214 659.599 203.497C659.464 203.781 659.396 204.106 659.396 204.475H658.222C658.222 203.954 658.336 203.478 658.564 203.046C658.793 202.615 659.132 202.272 659.58 202.018C660.029 201.76 660.581 201.631 661.237 201.631C661.821 201.631 662.32 201.735 662.735 201.942C663.15 202.145 663.467 202.433 663.687 202.805C663.911 203.173 664.023 203.605 664.023 204.1C664.023 204.371 663.977 204.646 663.884 204.925C663.795 205.2 663.67 205.475 663.509 205.75C663.353 206.026 663.169 206.296 662.957 206.563C662.75 206.83 662.528 207.092 662.291 207.35L659.815 210.035H664.449ZM669.565 201.707V211H668.391V203.173L666.023 204.037V202.977L669.381 201.707H669.565Z" fill="black"/>
+        <path d="M649.824 152.035V153H643.774V152.156L646.802 148.785C647.175 148.37 647.462 148.019 647.666 147.731C647.873 147.439 648.017 147.179 648.097 146.951C648.182 146.718 648.224 146.481 648.224 146.24C648.224 145.935 648.161 145.66 648.034 145.415C647.911 145.165 647.729 144.966 647.488 144.818C647.247 144.67 646.955 144.596 646.612 144.596C646.201 144.596 645.859 144.676 645.583 144.837C645.313 144.993 645.11 145.214 644.974 145.497C644.839 145.781 644.771 146.106 644.771 146.475H643.597C643.597 145.954 643.711 145.478 643.939 145.046C644.168 144.615 644.507 144.272 644.955 144.018C645.404 143.76 645.956 143.631 646.612 143.631C647.196 143.631 647.695 143.735 648.11 143.942C648.525 144.145 648.842 144.433 649.062 144.805C649.286 145.173 649.398 145.605 649.398 146.1C649.398 146.371 649.352 146.646 649.259 146.925C649.17 147.2 649.045 147.475 648.884 147.75C648.728 148.026 648.544 148.296 648.332 148.563C648.125 148.83 647.903 149.092 647.666 149.35L645.19 152.035H649.824ZM656.882 147.643V149.052C656.882 149.809 656.815 150.448 656.679 150.969C656.544 151.489 656.349 151.908 656.095 152.226C655.841 152.543 655.535 152.774 655.175 152.917C654.819 153.057 654.417 153.127 653.969 153.127C653.613 153.127 653.285 153.083 652.985 152.994C652.684 152.905 652.414 152.763 652.172 152.568C651.935 152.369 651.732 152.111 651.563 151.794C651.394 151.477 651.265 151.091 651.176 150.639C651.087 150.186 651.042 149.657 651.042 149.052V147.643C651.042 146.885 651.11 146.25 651.246 145.738C651.385 145.226 651.582 144.816 651.836 144.507C652.09 144.194 652.395 143.969 652.75 143.834C653.11 143.699 653.512 143.631 653.956 143.631C654.316 143.631 654.646 143.675 654.946 143.764C655.251 143.849 655.522 143.986 655.759 144.177C655.996 144.363 656.197 144.613 656.362 144.926C656.531 145.235 656.66 145.613 656.749 146.062C656.838 146.511 656.882 147.037 656.882 147.643ZM655.702 149.242V147.446C655.702 147.031 655.676 146.667 655.625 146.354C655.579 146.037 655.509 145.766 655.416 145.542C655.323 145.317 655.204 145.135 655.061 144.996C654.921 144.856 654.758 144.754 654.572 144.691C654.39 144.623 654.185 144.589 653.956 144.589C653.677 144.589 653.429 144.642 653.213 144.748C652.998 144.85 652.816 145.013 652.667 145.237C652.524 145.461 652.414 145.755 652.337 146.119C652.261 146.483 652.223 146.925 652.223 147.446V149.242C652.223 149.657 652.246 150.023 652.293 150.34C652.344 150.658 652.418 150.933 652.515 151.166C652.612 151.394 652.731 151.582 652.871 151.73C653.01 151.879 653.171 151.989 653.353 152.061C653.539 152.128 653.744 152.162 653.969 152.162C654.257 152.162 654.508 152.107 654.724 151.997C654.94 151.887 655.12 151.716 655.264 151.483C655.412 151.246 655.522 150.943 655.594 150.575C655.666 150.203 655.702 149.758 655.702 149.242ZM662.252 143.707V153H661.078V145.173L658.71 146.037V144.977L662.068 143.707H662.252ZM666.874 152.016H666.994C667.671 152.016 668.221 151.921 668.645 151.73C669.068 151.54 669.394 151.284 669.622 150.962C669.851 150.641 670.007 150.279 670.092 149.877C670.176 149.471 670.219 149.054 670.219 148.626V147.211C670.219 146.792 670.17 146.42 670.073 146.094C669.98 145.768 669.848 145.495 669.679 145.275C669.514 145.055 669.326 144.888 669.114 144.773C668.903 144.659 668.678 144.602 668.441 144.602C668.171 144.602 667.927 144.657 667.711 144.767C667.5 144.873 667.32 145.023 667.172 145.218C667.028 145.412 666.918 145.641 666.842 145.903C666.766 146.166 666.728 146.451 666.728 146.76C666.728 147.035 666.761 147.302 666.829 147.56C666.897 147.818 667 148.051 667.14 148.258C667.28 148.466 667.453 148.631 667.661 148.753C667.872 148.872 668.12 148.931 668.403 148.931C668.666 148.931 668.911 148.88 669.14 148.779C669.372 148.673 669.578 148.531 669.755 148.354C669.937 148.172 670.081 147.966 670.187 147.738C670.297 147.509 670.361 147.27 670.377 147.021H670.936C670.936 147.372 670.866 147.719 670.727 148.062C670.591 148.4 670.401 148.709 670.155 148.988C669.91 149.268 669.622 149.492 669.292 149.661C668.962 149.826 668.602 149.909 668.213 149.909C667.756 149.909 667.36 149.82 667.026 149.642C666.692 149.464 666.417 149.227 666.201 148.931C665.989 148.635 665.83 148.305 665.725 147.941C665.623 147.573 665.572 147.2 665.572 146.824C665.572 146.384 665.634 145.971 665.756 145.586C665.879 145.201 666.061 144.862 666.302 144.57C666.543 144.274 666.842 144.043 667.197 143.878C667.557 143.713 667.972 143.631 668.441 143.631C668.97 143.631 669.421 143.737 669.793 143.948C670.166 144.16 670.468 144.443 670.701 144.799C670.938 145.154 671.112 145.554 671.222 145.999C671.332 146.443 671.387 146.9 671.387 147.37V147.795C671.387 148.273 671.355 148.76 671.292 149.255C671.232 149.746 671.116 150.215 670.942 150.664C670.773 151.113 670.526 151.515 670.2 151.87C669.874 152.221 669.449 152.501 668.924 152.708C668.403 152.911 667.76 153.013 666.994 153.013H666.874V152.016Z" fill="black"/>
+        <circle cx="624" cy="148" r="6" fill="#FF0000"/>
+        <circle cx="624" cy="209" r="6" fill="#0000FF"/>
+        
+        <text
+          fill={"black"}
+          style={{
+                  fontSize: '18px',
+                  fontWeight: 'heavy'
+                }}
+                x='150' 
+                y='40'
+               aria-label="Chart of All Missing Migrant Deaths in 2019 and 2021"
+              >
+                North American Missing Migrant Deaths in 2019 and 2021
+        </text>
+        <text
+        className="y label"
+        transform="rotate(-90)"
+        y= "margin/2"
+        x="-260"
+        dy="1em"
+        textAnchor = "end"
+        >
+          Deaths
+        </text>
+        <text
+        className="x label"
+        y= "500"
+        x="340"
+        dy="1em"
+        textAnchor = "middle"
+        >
+          Months
+        </text>
+        <AxisLeft strokeWidth={0} left={margin + margin} scale={_scaleY}/>
+        <AxisBottom 
+        strokeWidth={0} 
+        top={chartSize - margin}
+        left={margin + margin}
+        scale={_scaleDate}
+        />
+       
+        {years.map((year, i) => {
+            return (
+              <>
+              <path
+                stroke={year === "2019" ? "red" : "blue"}
+                strokeWidth={2}
+                fill={"none"}
+                key={year}
+                d={_lineMaker(graphData[i].y)}
+              />
+              
+              </>
+            );
+          })}
+
+          
+      </svg>
+   
+    <div className="flex-item">
+    <h3> You should find that most causes of death are mixed or unknown and that the highest source quality is quite abundant in this dataset.</h3>
+    <p>This allows us to learn very little about the effect of COVID in the migrants as the data changes only slightly when sickness is not a cause of death. This could be in part to the lower quality of sources, but also due to the fact perhaps COVID was only a factor in the many hardships migrants face in their journeys.</p>
+    <p>But what about this year? Take a look at the total deaths per year and then make a guess below. </p>
+    </div>
+    <div className="plot flex-item">
+    <svg
+        width={chartSize + legendPadding}
+        height={chartSize + margin}
+        key = {'c'}
+        className="fixed"
       >
         
           <rect 
@@ -310,11 +432,7 @@ function App() {
           height={'100%'}
           fill={'white'}
           /> 
-         
-        <path d="M683.874 207.887V209H676.894V208.026L680.387 204.137C680.817 203.658 681.149 203.253 681.383 202.921C681.623 202.584 681.789 202.284 681.881 202.02C681.979 201.751 682.028 201.478 682.028 201.2C682.028 200.848 681.955 200.531 681.808 200.248C681.667 199.959 681.457 199.73 681.178 199.559C680.9 199.388 680.563 199.303 680.167 199.303C679.694 199.303 679.298 199.396 678.981 199.581C678.668 199.762 678.434 200.016 678.278 200.343C678.122 200.67 678.043 201.046 678.043 201.471H676.688C676.688 200.87 676.82 200.321 677.084 199.823C677.348 199.325 677.738 198.929 678.256 198.636C678.773 198.338 679.411 198.189 680.167 198.189C680.841 198.189 681.417 198.309 681.896 198.548C682.375 198.783 682.741 199.115 682.995 199.544C683.253 199.969 683.383 200.467 683.383 201.039C683.383 201.351 683.329 201.668 683.222 201.991C683.119 202.308 682.975 202.625 682.79 202.943C682.609 203.26 682.396 203.573 682.152 203.88C681.913 204.188 681.657 204.491 681.383 204.789L678.527 207.887H683.874ZM692.018 202.818V204.444C692.018 205.318 691.94 206.056 691.784 206.656C691.627 207.257 691.403 207.74 691.11 208.106C690.817 208.473 690.463 208.739 690.048 208.905C689.638 209.066 689.174 209.146 688.656 209.146C688.246 209.146 687.868 209.095 687.521 208.993C687.174 208.89 686.862 208.727 686.583 208.502C686.31 208.272 686.076 207.975 685.88 207.608C685.685 207.242 685.536 206.798 685.434 206.275C685.331 205.753 685.28 205.143 685.28 204.444V202.818C685.28 201.944 685.358 201.212 685.514 200.621C685.675 200.03 685.902 199.557 686.195 199.2C686.488 198.839 686.84 198.58 687.25 198.424C687.665 198.268 688.129 198.189 688.642 198.189C689.057 198.189 689.438 198.241 689.784 198.343C690.136 198.441 690.448 198.6 690.722 198.819C690.995 199.034 691.227 199.322 691.417 199.684C691.613 200.04 691.762 200.477 691.864 200.995C691.967 201.512 692.018 202.12 692.018 202.818ZM690.656 204.664V202.591C690.656 202.113 690.626 201.693 690.568 201.332C690.514 200.965 690.434 200.653 690.326 200.394C690.219 200.135 690.082 199.925 689.916 199.764C689.755 199.603 689.567 199.486 689.352 199.413C689.142 199.334 688.905 199.295 688.642 199.295C688.319 199.295 688.034 199.356 687.785 199.479C687.536 199.596 687.326 199.784 687.155 200.042C686.989 200.301 686.862 200.641 686.774 201.061C686.686 201.48 686.642 201.991 686.642 202.591V204.664C686.642 205.143 686.669 205.565 686.723 205.931C686.781 206.297 686.867 206.615 686.979 206.883C687.091 207.147 687.228 207.364 687.389 207.535C687.55 207.706 687.736 207.833 687.946 207.916C688.161 207.994 688.397 208.033 688.656 208.033C688.988 208.033 689.279 207.97 689.528 207.843C689.777 207.716 689.984 207.518 690.15 207.25C690.321 206.976 690.448 206.627 690.531 206.202C690.614 205.772 690.656 205.26 690.656 204.664ZM700.749 207.887V209H693.769V208.026L697.262 204.137C697.692 203.658 698.024 203.253 698.258 202.921C698.498 202.584 698.664 202.284 698.756 202.02C698.854 201.751 698.903 201.478 698.903 201.2C698.903 200.848 698.83 200.531 698.683 200.248C698.542 199.959 698.332 199.73 698.053 199.559C697.775 199.388 697.438 199.303 697.042 199.303C696.569 199.303 696.173 199.396 695.856 199.581C695.543 199.762 695.309 200.016 695.153 200.343C694.997 200.67 694.918 201.046 694.918 201.471H693.563C693.563 200.87 693.695 200.321 693.959 199.823C694.223 199.325 694.613 198.929 695.131 198.636C695.648 198.338 696.286 198.189 697.042 198.189C697.716 198.189 698.292 198.309 698.771 198.548C699.25 198.783 699.616 199.115 699.87 199.544C700.128 199.969 700.258 200.467 700.258 201.039C700.258 201.351 700.204 201.668 700.097 201.991C699.994 202.308 699.85 202.625 699.665 202.943C699.484 203.26 699.271 203.573 699.027 203.88C698.788 204.188 698.532 204.491 698.258 204.789L695.402 207.887H700.749ZM706.652 198.277V209H705.297V199.969L702.565 200.965V199.742L706.439 198.277H706.652Z" fill="black"/>
-        <path d="M683.874 146.887V148H676.894V147.026L680.387 143.137C680.817 142.658 681.149 142.253 681.383 141.921C681.623 141.584 681.789 141.284 681.881 141.02C681.979 140.751 682.028 140.478 682.028 140.2C682.028 139.848 681.955 139.531 681.808 139.248C681.667 138.959 681.457 138.73 681.178 138.559C680.9 138.388 680.563 138.303 680.167 138.303C679.694 138.303 679.298 138.396 678.981 138.581C678.668 138.762 678.434 139.016 678.278 139.343C678.122 139.67 678.043 140.046 678.043 140.471H676.688C676.688 139.87 676.82 139.321 677.084 138.823C677.348 138.325 677.738 137.929 678.256 137.636C678.773 137.338 679.411 137.189 680.167 137.189C680.841 137.189 681.417 137.309 681.896 137.548C682.375 137.783 682.741 138.115 682.995 138.544C683.253 138.969 683.383 139.467 683.383 140.039C683.383 140.351 683.329 140.668 683.222 140.991C683.119 141.308 682.975 141.625 682.79 141.943C682.609 142.26 682.396 142.573 682.152 142.88C681.913 143.188 681.657 143.491 681.383 143.789L678.527 146.887H683.874ZM692.018 141.818V143.444C692.018 144.318 691.94 145.056 691.784 145.656C691.627 146.257 691.403 146.74 691.11 147.106C690.817 147.473 690.463 147.739 690.048 147.905C689.638 148.066 689.174 148.146 688.656 148.146C688.246 148.146 687.868 148.095 687.521 147.993C687.174 147.89 686.862 147.727 686.583 147.502C686.31 147.272 686.076 146.975 685.88 146.608C685.685 146.242 685.536 145.798 685.434 145.275C685.331 144.753 685.28 144.143 685.28 143.444V141.818C685.28 140.944 685.358 140.212 685.514 139.621C685.675 139.03 685.902 138.557 686.195 138.2C686.488 137.839 686.84 137.58 687.25 137.424C687.665 137.268 688.129 137.189 688.642 137.189C689.057 137.189 689.438 137.241 689.784 137.343C690.136 137.441 690.448 137.6 690.722 137.819C690.995 138.034 691.227 138.322 691.417 138.684C691.613 139.04 691.762 139.477 691.864 139.995C691.967 140.512 692.018 141.12 692.018 141.818ZM690.656 143.664V141.591C690.656 141.113 690.626 140.693 690.568 140.332C690.514 139.965 690.434 139.653 690.326 139.394C690.219 139.135 690.082 138.925 689.916 138.764C689.755 138.603 689.567 138.486 689.352 138.413C689.142 138.334 688.905 138.295 688.642 138.295C688.319 138.295 688.034 138.356 687.785 138.479C687.536 138.596 687.326 138.784 687.155 139.042C686.989 139.301 686.862 139.641 686.774 140.061C686.686 140.48 686.642 140.991 686.642 141.591V143.664C686.642 144.143 686.669 144.565 686.723 144.931C686.781 145.297 686.867 145.615 686.979 145.883C687.091 146.147 687.228 146.364 687.389 146.535C687.55 146.706 687.736 146.833 687.946 146.916C688.161 146.994 688.397 147.033 688.656 147.033C688.988 147.033 689.279 146.97 689.528 146.843C689.777 146.716 689.984 146.518 690.15 146.25C690.321 145.976 690.448 145.627 690.531 145.202C690.614 144.772 690.656 144.26 690.656 143.664ZM698.214 137.277V148H696.859V138.969L694.127 139.965V138.742L698.002 137.277H698.214ZM703.546 146.865H703.686C704.467 146.865 705.102 146.755 705.59 146.535C706.078 146.315 706.454 146.02 706.718 145.649C706.981 145.278 707.162 144.86 707.26 144.396C707.357 143.928 707.406 143.447 707.406 142.954V141.32C707.406 140.837 707.35 140.407 707.238 140.031C707.13 139.655 706.979 139.34 706.784 139.086C706.593 138.833 706.376 138.64 706.132 138.508C705.888 138.376 705.629 138.31 705.355 138.31C705.043 138.31 704.762 138.374 704.513 138.5C704.269 138.623 704.062 138.796 703.891 139.021C703.725 139.245 703.598 139.509 703.51 139.812C703.422 140.114 703.378 140.444 703.378 140.8C703.378 141.118 703.417 141.425 703.495 141.723C703.573 142.021 703.693 142.29 703.854 142.529C704.015 142.768 704.215 142.958 704.455 143.1C704.699 143.237 704.984 143.305 705.312 143.305C705.614 143.305 705.897 143.247 706.161 143.129C706.43 143.007 706.667 142.844 706.872 142.639C707.082 142.429 707.248 142.192 707.37 141.928C707.497 141.665 707.57 141.389 707.589 141.101H708.234C708.234 141.506 708.153 141.906 707.992 142.302C707.836 142.692 707.616 143.049 707.333 143.371C707.05 143.693 706.718 143.952 706.337 144.147C705.956 144.338 705.541 144.433 705.092 144.433C704.564 144.433 704.108 144.331 703.722 144.125C703.336 143.92 703.019 143.647 702.77 143.305C702.526 142.963 702.343 142.583 702.221 142.163C702.104 141.738 702.045 141.308 702.045 140.874C702.045 140.366 702.116 139.89 702.257 139.445C702.399 139.001 702.609 138.61 702.887 138.273C703.166 137.932 703.51 137.666 703.92 137.475C704.335 137.285 704.813 137.189 705.355 137.189C705.966 137.189 706.486 137.312 706.916 137.556C707.345 137.8 707.694 138.127 707.963 138.537C708.236 138.947 708.437 139.409 708.563 139.921C708.69 140.434 708.754 140.961 708.754 141.503V141.994C708.754 142.546 708.717 143.107 708.644 143.679C708.576 144.245 708.441 144.787 708.241 145.305C708.046 145.822 707.76 146.286 707.384 146.696C707.008 147.102 706.518 147.424 705.912 147.663C705.312 147.897 704.569 148.015 703.686 148.015H703.546V146.865Z" fill="black"/>
-        <circle cx="649" cy="144" r="10" fill="#FF0000"/>
-        <circle cx="649" cy="205" r="10" fill="#008000"/>
+        
         <text
           fill={"black"}
           style={{
@@ -325,168 +443,182 @@ function App() {
                 y='35'
                aria-label="Chart of All Missing Migrant Deaths in 2019 and 2021"
               >
-                North American Missing Migrant Deaths in 2019 and 2021
+                North American Total Deaths per Year
         </text>
-
-
-        <AxisLeft strokeWidth={0} left={margin} scale={_scaleY}/>
+        <text
+        className="y label"
+        transform="rotate(-90)"
+        y= "margin/2"
+        x="-260"
+        dy="1em"
+        textAnchor = "end"
+        >
+          Deaths
+        </text>
+        <text
+        className="x label"
+        y= "500"
+        x="340"
+        dy="1em"
+        textAnchor = "middle"
+        >
+          Years
+        </text>
+        <AxisLeft strokeWidth={0} left={2*margin} scale={_scaleY2}/>
         <AxisBottom 
         strokeWidth={0} 
         top={chartSize - margin}
-        left={margin}
-        scale={_scaleDate}
-        tickValues={months}
-        
+        left={margin + margin}
+        scale={_scaleDate2}
+        tickValues={yearList}
         />
-        
-        {years.map((year, i) => {
-            return (
+     
               <path
-                stroke={year === "2019" ? "red" : "green"}
+                stroke={"black"}
                 strokeWidth={2}
-                // fill={"rgba(255,0,0,.3)"}
                 fill={"none"}
-                key={year}
-                d={_lineMaker(graphData[i].y)}
+                key={'poo'}
+                d={_lineMaker2(sumYearly)}
               />
-            );
-          })}
-
           
-      </svg>
-    {/* <Carousel.Caption> */}
-        {/* </Carousel.Caption> */}
-  {/* </Carousel.Item> */}
-  {/* <Carousel.Item> */}
-<p>This plot was my first look into the data, but upon further inspection I see that there is a variable "Source Quality" provided by the Missing Migrants data. In order to ensure the plots and therefore the conclusions drawn are well-founded I filtered for data of quality 4 and higher. This scale is from 1-5.  </p>
-  <svg
+    </svg>
+    <p>Guess:</p>
+<p>
+    <form>
+      <input type={'text'} id="guess" name="guess" value={guess} onChange={(event)=>setGuess(event.target.value)}></input>
+      <input type='button' value={'Make a Guess'} onClick={()=>{handleSubmit(guess)
+         setClicked(true)}}></input>
+      {correct && clicked &&
+      <p>Unfortunately the number is this high.</p>}
+      {!correct && clicked &&
+        <p>Try again</p>
+      }
+    </form>
+    
+    </p>
+    {clicked &&
+    <p>Using a linear regression model I calculated the expected trend for each year and thus the predicted deaths for 2022. The predicted value of deaths is {parseInt(predicted2022)} </p>
+    }
+    </div>
+    {clicked &&
+    <svg
         width={chartSize + legendPadding}
-        height={chartSize+margin}
+        height={chartSize + margin}
         key = {'b'}
-        // style={'background:white'}
-        >
+        className="fixed"
+      >
+        
           <rect 
           width={'100%'}
           height={'100%'}
           fill={'white'}
           /> 
-        <path d="M683.874 207.887V209H676.894V208.026L680.387 204.137C680.817 203.658 681.149 203.253 681.383 202.921C681.623 202.584 681.789 202.284 681.881 202.02C681.979 201.751 682.028 201.478 682.028 201.2C682.028 200.848 681.955 200.531 681.808 200.248C681.667 199.959 681.457 199.73 681.178 199.559C680.9 199.388 680.563 199.303 680.167 199.303C679.694 199.303 679.298 199.396 678.981 199.581C678.668 199.762 678.434 200.016 678.278 200.343C678.122 200.67 678.043 201.046 678.043 201.471H676.688C676.688 200.87 676.82 200.321 677.084 199.823C677.348 199.325 677.738 198.929 678.256 198.636C678.773 198.338 679.411 198.189 680.167 198.189C680.841 198.189 681.417 198.309 681.896 198.548C682.375 198.783 682.741 199.115 682.995 199.544C683.253 199.969 683.383 200.467 683.383 201.039C683.383 201.351 683.329 201.668 683.222 201.991C683.119 202.308 682.975 202.625 682.79 202.943C682.609 203.26 682.396 203.573 682.152 203.88C681.913 204.188 681.657 204.491 681.383 204.789L678.527 207.887H683.874ZM692.018 202.818V204.444C692.018 205.318 691.94 206.056 691.784 206.656C691.627 207.257 691.403 207.74 691.11 208.106C690.817 208.473 690.463 208.739 690.048 208.905C689.638 209.066 689.174 209.146 688.656 209.146C688.246 209.146 687.868 209.095 687.521 208.993C687.174 208.89 686.862 208.727 686.583 208.502C686.31 208.272 686.076 207.975 685.88 207.608C685.685 207.242 685.536 206.798 685.434 206.275C685.331 205.753 685.28 205.143 685.28 204.444V202.818C685.28 201.944 685.358 201.212 685.514 200.621C685.675 200.03 685.902 199.557 686.195 199.2C686.488 198.839 686.84 198.58 687.25 198.424C687.665 198.268 688.129 198.189 688.642 198.189C689.057 198.189 689.438 198.241 689.784 198.343C690.136 198.441 690.448 198.6 690.722 198.819C690.995 199.034 691.227 199.322 691.417 199.684C691.613 200.04 691.762 200.477 691.864 200.995C691.967 201.512 692.018 202.12 692.018 202.818ZM690.656 204.664V202.591C690.656 202.113 690.626 201.693 690.568 201.332C690.514 200.965 690.434 200.653 690.326 200.394C690.219 200.135 690.082 199.925 689.916 199.764C689.755 199.603 689.567 199.486 689.352 199.413C689.142 199.334 688.905 199.295 688.642 199.295C688.319 199.295 688.034 199.356 687.785 199.479C687.536 199.596 687.326 199.784 687.155 200.042C686.989 200.301 686.862 200.641 686.774 201.061C686.686 201.48 686.642 201.991 686.642 202.591V204.664C686.642 205.143 686.669 205.565 686.723 205.931C686.781 206.297 686.867 206.615 686.979 206.883C687.091 207.147 687.228 207.364 687.389 207.535C687.55 207.706 687.736 207.833 687.946 207.916C688.161 207.994 688.397 208.033 688.656 208.033C688.988 208.033 689.279 207.97 689.528 207.843C689.777 207.716 689.984 207.518 690.15 207.25C690.321 206.976 690.448 206.627 690.531 206.202C690.614 205.772 690.656 205.26 690.656 204.664ZM700.749 207.887V209H693.769V208.026L697.262 204.137C697.692 203.658 698.024 203.253 698.258 202.921C698.498 202.584 698.664 202.284 698.756 202.02C698.854 201.751 698.903 201.478 698.903 201.2C698.903 200.848 698.83 200.531 698.683 200.248C698.542 199.959 698.332 199.73 698.053 199.559C697.775 199.388 697.438 199.303 697.042 199.303C696.569 199.303 696.173 199.396 695.856 199.581C695.543 199.762 695.309 200.016 695.153 200.343C694.997 200.67 694.918 201.046 694.918 201.471H693.563C693.563 200.87 693.695 200.321 693.959 199.823C694.223 199.325 694.613 198.929 695.131 198.636C695.648 198.338 696.286 198.189 697.042 198.189C697.716 198.189 698.292 198.309 698.771 198.548C699.25 198.783 699.616 199.115 699.87 199.544C700.128 199.969 700.258 200.467 700.258 201.039C700.258 201.351 700.204 201.668 700.097 201.991C699.994 202.308 699.85 202.625 699.665 202.943C699.484 203.26 699.271 203.573 699.027 203.88C698.788 204.188 698.532 204.491 698.258 204.789L695.402 207.887H700.749ZM706.652 198.277V209H705.297V199.969L702.565 200.965V199.742L706.439 198.277H706.652Z" fill="black"/>
-        <path d="M683.874 146.887V148H676.894V147.026L680.387 143.137C680.817 142.658 681.149 142.253 681.383 141.921C681.623 141.584 681.789 141.284 681.881 141.02C681.979 140.751 682.028 140.478 682.028 140.2C682.028 139.848 681.955 139.531 681.808 139.248C681.667 138.959 681.457 138.73 681.178 138.559C680.9 138.388 680.563 138.303 680.167 138.303C679.694 138.303 679.298 138.396 678.981 138.581C678.668 138.762 678.434 139.016 678.278 139.343C678.122 139.67 678.043 140.046 678.043 140.471H676.688C676.688 139.87 676.82 139.321 677.084 138.823C677.348 138.325 677.738 137.929 678.256 137.636C678.773 137.338 679.411 137.189 680.167 137.189C680.841 137.189 681.417 137.309 681.896 137.548C682.375 137.783 682.741 138.115 682.995 138.544C683.253 138.969 683.383 139.467 683.383 140.039C683.383 140.351 683.329 140.668 683.222 140.991C683.119 141.308 682.975 141.625 682.79 141.943C682.609 142.26 682.396 142.573 682.152 142.88C681.913 143.188 681.657 143.491 681.383 143.789L678.527 146.887H683.874ZM692.018 141.818V143.444C692.018 144.318 691.94 145.056 691.784 145.656C691.627 146.257 691.403 146.74 691.11 147.106C690.817 147.473 690.463 147.739 690.048 147.905C689.638 148.066 689.174 148.146 688.656 148.146C688.246 148.146 687.868 148.095 687.521 147.993C687.174 147.89 686.862 147.727 686.583 147.502C686.31 147.272 686.076 146.975 685.88 146.608C685.685 146.242 685.536 145.798 685.434 145.275C685.331 144.753 685.28 144.143 685.28 143.444V141.818C685.28 140.944 685.358 140.212 685.514 139.621C685.675 139.03 685.902 138.557 686.195 138.2C686.488 137.839 686.84 137.58 687.25 137.424C687.665 137.268 688.129 137.189 688.642 137.189C689.057 137.189 689.438 137.241 689.784 137.343C690.136 137.441 690.448 137.6 690.722 137.819C690.995 138.034 691.227 138.322 691.417 138.684C691.613 139.04 691.762 139.477 691.864 139.995C691.967 140.512 692.018 141.12 692.018 141.818ZM690.656 143.664V141.591C690.656 141.113 690.626 140.693 690.568 140.332C690.514 139.965 690.434 139.653 690.326 139.394C690.219 139.135 690.082 138.925 689.916 138.764C689.755 138.603 689.567 138.486 689.352 138.413C689.142 138.334 688.905 138.295 688.642 138.295C688.319 138.295 688.034 138.356 687.785 138.479C687.536 138.596 687.326 138.784 687.155 139.042C686.989 139.301 686.862 139.641 686.774 140.061C686.686 140.48 686.642 140.991 686.642 141.591V143.664C686.642 144.143 686.669 144.565 686.723 144.931C686.781 145.297 686.867 145.615 686.979 145.883C687.091 146.147 687.228 146.364 687.389 146.535C687.55 146.706 687.736 146.833 687.946 146.916C688.161 146.994 688.397 147.033 688.656 147.033C688.988 147.033 689.279 146.97 689.528 146.843C689.777 146.716 689.984 146.518 690.15 146.25C690.321 145.976 690.448 145.627 690.531 145.202C690.614 144.772 690.656 144.26 690.656 143.664ZM698.214 137.277V148H696.859V138.969L694.127 139.965V138.742L698.002 137.277H698.214ZM703.546 146.865H703.686C704.467 146.865 705.102 146.755 705.59 146.535C706.078 146.315 706.454 146.02 706.718 145.649C706.981 145.278 707.162 144.86 707.26 144.396C707.357 143.928 707.406 143.447 707.406 142.954V141.32C707.406 140.837 707.35 140.407 707.238 140.031C707.13 139.655 706.979 139.34 706.784 139.086C706.593 138.833 706.376 138.64 706.132 138.508C705.888 138.376 705.629 138.31 705.355 138.31C705.043 138.31 704.762 138.374 704.513 138.5C704.269 138.623 704.062 138.796 703.891 139.021C703.725 139.245 703.598 139.509 703.51 139.812C703.422 140.114 703.378 140.444 703.378 140.8C703.378 141.118 703.417 141.425 703.495 141.723C703.573 142.021 703.693 142.29 703.854 142.529C704.015 142.768 704.215 142.958 704.455 143.1C704.699 143.237 704.984 143.305 705.312 143.305C705.614 143.305 705.897 143.247 706.161 143.129C706.43 143.007 706.667 142.844 706.872 142.639C707.082 142.429 707.248 142.192 707.37 141.928C707.497 141.665 707.57 141.389 707.589 141.101H708.234C708.234 141.506 708.153 141.906 707.992 142.302C707.836 142.692 707.616 143.049 707.333 143.371C707.05 143.693 706.718 143.952 706.337 144.147C705.956 144.338 705.541 144.433 705.092 144.433C704.564 144.433 704.108 144.331 703.722 144.125C703.336 143.92 703.019 143.647 702.77 143.305C702.526 142.963 702.343 142.583 702.221 142.163C702.104 141.738 702.045 141.308 702.045 140.874C702.045 140.366 702.116 139.89 702.257 139.445C702.399 139.001 702.609 138.61 702.887 138.273C703.166 137.932 703.51 137.666 703.92 137.475C704.335 137.285 704.813 137.189 705.355 137.189C705.966 137.189 706.486 137.312 706.916 137.556C707.345 137.8 707.694 138.127 707.963 138.537C708.236 138.947 708.437 139.409 708.563 139.921C708.69 140.434 708.754 140.961 708.754 141.503V141.994C708.754 142.546 708.717 143.107 708.644 143.679C708.576 144.245 708.441 144.787 708.241 145.305C708.046 145.822 707.76 146.286 707.384 146.696C707.008 147.102 706.518 147.424 705.912 147.663C705.312 147.897 704.569 148.015 703.686 148.015H703.546V146.865Z" fill="black"/>
-        <circle cx="649" cy="144" r="10" fill="#FF0000"/>
-        <circle cx="649" cy="205" r="10" fill="#008000"/>
+        
         <text
           fill={"black"}
           style={{
-            fontSize: '15px',
-            fontWeight: 'heavy'
-          }}
-          x='90' 
-          y='35'
-          aria-label="Chart of Missing Migrant Deaths in 2019 and 2021 of Higher Source Quality"
-        >
-              North American Deaths in 2019 and 2021 from Higher Quality Sources
+                  fontSize: '18px',
+                  fontWeight: 'heavy'
+                }}
+                x='150' 
+                y='35'
+               aria-label="Chart of All Missing Migrant Deaths in 2019 and 2021"
+              >
+                North American Predicted Missing Migrant Deaths in 2022
         </text>
-        <AxisLeft strokeWidth={0} left={margin} scale={_scaleY}/>
+        <text
+        className="y label"
+        transform="rotate(-90)"
+        y= "margin/2"
+        x="-260"
+        dy="1em"
+        textAnchor = "end"
+        >
+          Deaths
+        </text>
+        <text
+        className="x label"
+        // transform="rotate(90)"
+        y= "500"
+        x="340"
+        dy="1em"
+        textAnchor = "middle"
+        >
+          Years
+        </text>
+        <AxisLeft strokeWidth={0} left={2*margin} scale={_scaleY1}/>
         <AxisBottom 
         strokeWidth={0} 
         top={chartSize - margin}
-        left={margin}
-        scale={_scaleDate}
-        tickValues={months}
+        left={margin + margin}
+        scale={_scaleDate1}
+        tickValues={newYears}
         />
-        {years.map((year, i) => {
-            return (
+     
               <path
-                stroke={year === "2019" ? "red" : "green"}
+                stroke={"black"}
                 strokeWidth={2}
-                // fill={"rgba(255,0,0,.3)"}
                 fill={"none"}
-                key={year}
-                d={_lineMaker(higherQual[i].y)}
+                key={'pee'}
+                d={_lineMaker1(predicted.y)}
               />
-            );
-          })}
-      </svg>
-    {/* <Carousel.Caption> */}
-    <p>Now that the data is more reputable we can see that the trend remains the same for both years, however 2019 has a drastic change in the counts for deaths. 
-      From now on I will only utilize data of Source Quality of 4 and higher</p>
-    {/* </Carousel.Caption> */}
-  {/* </Carousel.Item> */}
-  
-{/* </Carousel> */}
-<h2>Global Distributions</h2>
-<p>Below we take a look at the total number of missing and deaths in 2019 and 2021. This will allow us to see the trends globally. </p>
-    <div>
-      <Plot
-        data={globalDeath}
-        layout={ {width: chartSize + legendPadding, height: chartSize, title: 'Total Deaths Globally in 2021 and 2019 per Month'}
-      }
-      />
-    </div>
-      <div id="addSpace">
-        <Plot
-        data={globalMissing}
-          layout={ {width: chartSize + legendPadding, height: chartSize, title: 'Total Missing Globally in 2021 and 2019 per Month'}
-        }
-        />
-      </div>
-      <p>
-        It is understandable and reasonable that there are more deaths in December each year due to cold weather. In April and May in both years there was a drop in deaths. In 2019 the Sudan Protests began this could possibly attribute to the lack of deaths and migration to North America. After President AMLO took office in 2019 there was a decrease in immigration staff at the border of Mexico and the US as well as more policies that promoted orderly transit according to <cite><a href="https://www.wilsoncenter.org/article/2019-migration-to-and-through-mexico-mid-year-report">Wilson Center</a></cite>. Through stronger enforcement from January to May of 2019 this could cause the decline in deaths in April and May.
-      </p>
-      <p>
-      In 2021 there was still an ongoing Pandemic, although the United States began rolling out vaccines the rest of the world was still not fully vaccinated. The drop in deaths in October could be attributed to the higher rate of fully vaccinated people globally. By the end of September 2021, about 35% of the world's population is fully vaccinated according to <cite><a href="https://ourworldindata.org/covid-vaccinations">Our World in Data</a></cite>.
-      </p>
-      <div id="addSpace" className="plot">
-      <Plot
-        data={regionData}
-        layout={ {width: chartSize + legendPadding, height: chartSize + margin, title: 'Total Dead for Each Region'}}
-      />
-      </div>
-      <p>
-        North America has much higher deaths than any other region, it also has the most people migrating to this region than anywhere else in the world in 2016 it was found that there were 1 Million people who migrated to the US each year. Thus I will continue to focus solely on North America in my further investigations.
-      </p>
-      <div className="plot">
-      <Plot
-        data={NAData}
-        layout={ {width: chartSize + legendPadding, height: chartSize + margin, title: 'Total Dead for Each Year'}}
-      />
-      </div>
-      <p>
-        There has been a steady increase in deaths per year with a drop in 2020, explained by the strict travel restrictions globally due to the pandemic. The steep increase in 2021 can be attributed to the easing travel restrictions but still ongoing deaths due to COVID-19 and other factors.
-      </p>
-      <h2>Error Charts</h2>
-      <p>Going back to the <a href="#two">first chart</a> I made let's explore the error margin for each month. 
-      I did this through taking into account the source quality. Scaling the data by the source quality, i.e. if it is a 5 quality level the death will be counted wholly with no margin or error,
-       but if there is a level 1 quality deaths source the error margin will increase. This will allow us to understand just how reliable this data is for both 2019 and 2021 in North America.</p>
-    <div className="plot">
-      <Plot
-        data={err2019}
-        layout={ {
-          width: chartSize + legendPadding, 
-          height: chartSize, 
-          title: 'Deaths with Error Margin in NA in 2019 per Month'}}
-      />
-    </div>
-    <div className="plot">
-      <Plot
-        data={err2021}
-        layout={ {
-          width: chartSize + legendPadding, 
-          height: chartSize, 
-          title: 'Deaths with Error Margin in NA in 2021 per Month'}}
-      />
-    </div>
-    <h2>Conclusion</h2>
-    <p>
-      After calculating the error margins in both 2019 and 2021 there are several months that have very high error margins. In 2019 both June and July had bigger margins of error, after a quick google search I found out President reached a deal with Mexico to avoid tariffs and curb immigration and human trafficking. This caused immigrants to illegally cross borders out of desperation and fight to survive in their journeys, leading to lower quality of sources reporting these deaths. Lastly in June of 2021, travel restrictions were eased in countries not yet equiped or safe enough to do so, leading to surges in cases globally. The different causes and trends in these graphs can be explained by major events. 
-    </p>
-    </div>
-  <footer>
-        <p>Raiham Malik Winter 22 Info 474</p>
-       <p><a href="https://github.com/Raihamm/474finalproj">Github Repo</a></p> 
-  </footer>
-  </div>
+          
+    </svg>
+}
+    <div className="flex-item"> 
+    {view==false &&
+      <p>Do you want to take a closer look at causes of death for this year?</p>}
+    {view==false && 
+      <button onClick={()=>setView(true)}>Take a closer look</button>
+    } 
     
+     </div>
+    <p></p>
+    {view && 
+      <Plot 
+      data={[{
+        x: causesOfDeath,
+        y: causeMeans,
+        type: 'bar',
+        marker: {
+          color: 'black'
+        }
+      }]}
+      layout={ {
+        width: chartSize + legendPadding, 
+        height: chartSize, 
+        
+        yaxis: {
+          title:'Predicted Deaths',
+        },
+        tickfont:{
+          family: 'Lato, serif',
+          size: 10
+        },
+        title: 'Predicted Causes of Death in 2022'}}/>
+    }
+   {view &&
+   <button  onClick={()=>setView(false)}>Close Graph</button>
+   }
+    <div className="flex-item">
+    <p>The unfortunate trend in migrants death is upwards each year with a large spike in 2021. Further down you will find older graphs that illuminate global trends and North American trends</p>
+      </div>
+   
+<div className="fixed"> 
+  <h2>Global Distributions</h2>
+  <p>Below we take a look at the total number of missing and deaths in 2019 and 2021. This will allow us to see the trends globally. </p>
+</div>
+<div className="flex-item">
+<Graphs/>
+    
+    </div>
+    </div>
+    <footer>
+     <p> Raiham Malik Info 474 Winter 2022 Project</p>
+     <p><a href="https://github.com/Raihamm/474finalproj">Github Repo</a></p>
+      </footer>
+  </div>
+   
   );
 }
 export default App;
